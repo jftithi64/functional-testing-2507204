@@ -1,0 +1,25 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Coverage output
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db

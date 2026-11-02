@@ -1,0 +1,59 @@
+name: Functional tests and coverage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Lint source and tests
+        run: python -m ruff check target.py tests
+
+      - name: Run tests and enforce 100% statement and branch coverage
+        run: >-
+          python -m pytest tests/test_target.py
+          --cov=target
+          --cov-branch
+          --cov-fail-under=100
+          --cov-report=term-missing
+          --cov-report=xml
+          --cov-report=html
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
