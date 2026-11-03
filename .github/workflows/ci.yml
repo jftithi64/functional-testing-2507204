@@ -1,19 +1,20 @@
-name: Functional tests and coverage
+name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: lint + test on three Python versions. This is the gate: if any
+  # matrix entry fails, `deploy` and `smoke-test` are skipped.
+  # ---------------------------------------------------------------------------
   test:
-    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -34,12 +35,12 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Lint source and tests
-        run: python -m ruff check target.py tests
+      - name: Lint
+        run: python -m ruff check .
 
-      - name: Run tests and enforce 100% statement and branch coverage
+      - name: Run all tests (fail below 100% coverage of target.py)
         run: >-
-          python -m pytest tests/test_target.py
+          python -m pytest
           --cov=target
           --cov-branch
           --cov-fail-under=100
@@ -47,7 +48,7 @@ jobs:
           --cov-report=xml
           --cov-report=html
 
-      - name: Upload coverage reports
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -57,3 +58,94 @@ jobs:
             htmlcov/
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Job 2: deploy. Only after every test passed, and only for pushes to main
+  # (a merged pull request is a push to main). Uses a GitHub secret.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Trigger Render deploy of this exact commit
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::Secret RENDER_DEPLOY_HOOK_URL is not set."
+            exit 1
+          fi
+          # `ref` tells Render to build this commit rather than "whatever is latest".
+          curl --fail --silent --show-error --max-time 60 -X POST \
+            "${RENDER_DEPLOY_HOOK_URL}&ref=${GITHUB_SHA}" > /dev/null
+          echo "Deploy requested for ${GITHUB_SHA}"
+
+  # ---------------------------------------------------------------------------
+  # Job 3: smoke test the LIVE site. Waits until /health reports the new SHA,
+  # then makes three live requests.
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      LIVE_APP_URL: ${{ vars.LIVE_APP_URL }}
+
+    steps:
+      - name: Check configuration
+        run: |
+          if [ -z "$LIVE_APP_URL" ]; then
+            echo "::error::Repository variable LIVE_APP_URL is not set."
+            exit 1
+          fi
+
+      - name: Wait for the new commit to go live
+        run: |
+          base="${LIVE_APP_URL%/}"
+          for attempt in $(seq 1 80); do
+            live_sha=$(curl --silent --max-time 20 "$base/health" \
+              | python3 -c 'import sys, json; print(json.load(sys.stdin).get("commit_sha", ""))' \
+              2>/dev/null || true)
+            echo "attempt ${attempt}: live=${live_sha:-<no answer>} expected=${GITHUB_SHA}"
+            if [ "$live_sha" = "$GITHUB_SHA" ]; then
+              echo "New version is live."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Live site never reported commit ${GITHUB_SHA}."
+          exit 1
+
+      - name: "Live request 1/3: GET /health reports status ok and the new SHA"
+        run: |
+          curl --fail --silent --show-error --max-time 30 "${LIVE_APP_URL%/}/health" \
+            | python3 -c '
+          import json, os, sys
+          data = json.load(sys.stdin)
+          assert data["status"] == "ok", data
+          assert data["commit_sha"] == os.environ["GITHUB_SHA"], data
+          print("health OK:", data)'
+
+      - name: "Live request 2/3: GET / serves the frontend with the SHA footer"
+        run: |
+          page=$(curl --fail --silent --show-error --max-time 30 "${LIVE_APP_URL%/}/")
+          echo "$page" | grep -q "Functional Testing Playground"
+          echo "$page" | grep -q 'id="health"'
+          echo "frontend OK"
+
+      - name: "Live request 3/3: POST /api/run executes a target.py function"
+        run: |
+          curl --fail --silent --show-error --max-time 30 \
+            -H "Content-Type: application/json" \
+            -d '{"function":"is_adult","args":[18]}' \
+            "${LIVE_APP_URL%/}/api/run" \
+            | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          assert data["result"] is True and data["result_type"] == "bool", data
+          print("API OK:", data)'
