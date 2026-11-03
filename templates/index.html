@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Functional Testing Playground</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, Segoe UI, Arial, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172033; }
+    header { padding: 28px max(22px, calc((100% - 980px)/2)); background: #172b4d; color: white; }
+    header p { margin: 8px 0 0; color: #d6e2f2; }
+    main { max-width: 980px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr); gap: 20px; }
+    section { background: white; padding: 22px; border: 1px solid #dce4ef; border-radius: 14px; box-shadow: 0 5px 20px #172b4d0a; }
+    label { display: block; font-weight: 650; margin: 15px 0 7px; }
+    select, textarea { width: 100%; padding: 11px; border: 1px solid #c8d3e1; border-radius: 8px; font: inherit; }
+    textarea { min-height: 145px; font-family: Consolas, monospace; }
+    button { margin-top: 16px; border: 0; border-radius: 8px; padding: 12px 18px; background: #1769e0; color: white; font-weight: 700; cursor: pointer; }
+    button:hover { background: #0e55bd; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #101c2e; color: #e5efff; padding: 16px; border-radius: 9px; min-height: 150px; }
+    pre.ok { border-left: 6px solid #2fbf71; }
+    pre.err { border-left: 6px solid #e5484d; }
+    .muted { color: #62718a; font-size: .92rem; }
+    .health { max-width: 980px; margin: 0 auto 28px; padding: 0 20px; color: #62718a; font-size: .85rem; }
+    @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Functional Testing Playground</h1>
+  <p>Try all 16 Python functions and inspect their results or validation errors.</p>
+</header>
+<main>
+  <section>
+    <h2>Run a function</h2>
+    <p class="muted">Enter arguments as a JSON array. Use a JSON object for keyword arguments if needed.</p>
+    <label for="function">Function</label>
+    <select id="function">
+      {% for name in function_names %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+    </select>
+    <label for="args">Arguments (JSON)</label>
+    <textarea id="args" spellcheck="false">[18]</textarea>
+    <label for="kwargs">Keyword arguments (JSON object)</label>
+    <textarea id="kwargs" spellcheck="false">{}</textarea>
+    <button id="run">Run function</button>
+  </section>
+  <section>
+    <h2>Result</h2>
+    <p class="muted">The result includes the returned value and its Python type, or the exception raised.</p>
+    <pre id="output" aria-live="polite">Choose a function and click Run function.</pre>
+    <h3>Example inputs</h3>
+    <p class="muted" id="example">is_adult: [18]</p>
+  </section>
+</main>
+<div class="health" id="health">Checking deployed version…</div>
+<script>
+const examples = {
+  is_adult: '[18]', celsius_to_fahrenheit: '[0]', count_vowels: '["Functional Testing"]',
+  invert: '[true]', greet: '["Student"]', find_max: '[[3, 9, 2]]',
+  get_price: '[{"pen": 10}, "pen"]', swap: '[["left", "right"]]',
+  common_items: '[[1, 2, 3], [2, 3, 4]]', is_leap_year: '[2024]',
+  to_int: '["42"]', divide: '[10, 2]', power: '[2, 3]', square_root: '[81]',
+  factorial: '[5]', average: '[[10, 20, 30]]'
+};
+const functionSelect = document.getElementById('function');
+const argsInput = document.getElementById('args');
+const kwargsInput = document.getElementById('kwargs');
+const output = document.getElementById('output');
+function updateExample() {
+  const name = functionSelect.value;
+  argsInput.value = examples[name];
+  kwargsInput.value = '{}';
+  document.getElementById('example').textContent = `${name}: ${examples[name]}`;
+}
+functionSelect.addEventListener('change', updateExample);
+document.getElementById('run').addEventListener('click', async () => {
+  try {
+    const args = JSON.parse(argsInput.value);
+    const kwargs = JSON.parse(kwargsInput.value);
+    output.className = '';
+    output.textContent = 'Running…';
+    const response = await fetch('/api/run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({function: functionSelect.value, args, kwargs})
+    });
+    const data = await response.json();
+    output.className = response.ok ? 'ok' : 'err';
+    output.textContent = JSON.stringify(data, null, 2);
+  } catch (error) {
+    output.className = 'err';
+    output.textContent = `Input error: ${error.message}`;
+  }
+});
+fetch('/health').then(r => r.json()).then(data => {
+  document.getElementById('health').textContent = `Service status: ${data.status} · Deployed commit: ${data.commit_sha}`;
+}).catch(() => {
+  document.getElementById('health').textContent = 'Deployment version is currently unavailable.';
+});
+</script>
+</body>
+</html>
