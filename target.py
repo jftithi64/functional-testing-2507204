@@ -1,4 +1,3 @@
-
 """target.py - simple functions for practising functional testing."""
 
 import math
@@ -16,8 +15,7 @@ def celsius_to_fahrenheit(celsius):
     return round(celsius * 9 / 5 + 32, 2)
 
 
-# 3. String: count vowels (a, e, i, o, u), ignoring case.
-# Non-string raises TypeError.
+# 3. String: count vowels (a, e, i, o, u), ignoring case. Non-string raises TypeError.
 def count_vowels(text):
     if not isinstance(text, str):
         raise TypeError("text must be a string")
