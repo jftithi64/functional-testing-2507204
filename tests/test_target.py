@@ -698,3 +698,4 @@ def test_average_wrong_type(numbers):
 def test_average_non_numeric_items(numbers):
     with pytest.raises(TypeError):
         target.average(numbers)
+
