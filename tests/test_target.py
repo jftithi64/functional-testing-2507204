@@ -701,3 +701,6 @@ def test_average_non_numeric_items(numbers):
 
 
  
+
+   def test_demo_failure():
+       assert target.is_adult(18) is False
