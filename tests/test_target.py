@@ -698,3 +698,6 @@ def test_average_wrong_type(numbers):
 def test_average_non_numeric_items(numbers):
     with pytest.raises(TypeError):
         target.average(numbers)
+
+def test_demo_failure():
+    assert target.is_adult(18) is False
